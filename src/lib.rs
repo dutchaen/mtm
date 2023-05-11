@@ -176,7 +176,9 @@ impl Account {
                 let msgs = match account.get_messages() {
                     Ok(msgs) => msgs,
                     Err(_) => {
-                        let _ = tx.send((None, Box::new(MessageRecvError)));
+                        if tx.send((None, Box::new(MessageRecvError))).is_err() {
+                            break 'main;
+                        };
                         vec![]
                     }
                 };
