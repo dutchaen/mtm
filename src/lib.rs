@@ -172,7 +172,7 @@ impl Account {
         };
         go!(move || {
             let mut received: Vec<PreviewMessage> = vec![];
-            loop {
+            'main: loop {
                 let msgs = match account.get_messages() {
                     Ok(msgs) => msgs,
                     Err(_) => {
@@ -187,7 +187,9 @@ impl Account {
                         if !received.contains(msg) {
                             received.push(msg.clone());
                             
-                            tx.send((Some(msg.clone()), Box::new(Nil)));
+                            if tx.send((Some(msg.clone()), Box::new(Nil))).is_err() {
+                                break 'main;
+                            }
                         }
                     }
                 }
