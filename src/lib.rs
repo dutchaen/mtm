@@ -5,7 +5,6 @@ use std::thread;
 use std::time::Duration;
 use std::sync::mpsc::{self, Receiver};
 
-use may::go;
 use serde_json::json;
 use reqwest::blocking::Client;
 use rand::{Rng, distributions::Alphanumeric};
@@ -38,6 +37,7 @@ pub struct Account {
     client: reqwest::blocking::Client,
 }
 
+
 impl Account {
     pub fn address(&self) -> &String { return &self.address; }
     pub fn password(&self) -> &String { return &self.password; }
@@ -57,10 +57,6 @@ impl Account {
             .json()?;
 
         let id = response_data["id"].as_str().unwrap().to_string();
-        let created_at = response_data["createdAt"].as_str().unwrap();
-        let updated_at = response_data["updatedAt"].as_str().unwrap();
-
-        let data = json!({"@context":"/contexts/Account","@id":format!("/accounts/{}", id),"@type":"Account","id":id,"address":address,"quota":40000000,"used":0,"isDisabled":false,"isDeleted":false,"createdAt":created_at,"updatedAt":updated_at,"password":password});
         let response_data: serde_json::Value = client.post("https://api.mail.tm/token")
             .json(&data)
             .send()?
@@ -109,7 +105,7 @@ impl Account {
 
         
         let index: usize = rng.gen_range(0..=domains.len()-1);
-        let address = format!("{}@{}", address_name, domains[index]);
+        let address = format!("{}@{}", address_name, domains[index]).to_ascii_lowercase();
 
         let data = json!({
             "address": address,
@@ -123,10 +119,6 @@ impl Account {
             .json()?;
 
         let id = response_data["id"].as_str().unwrap().to_string();
-        let created_at = response_data["createdAt"].as_str().unwrap();
-        let updated_at = response_data["updatedAt"].as_str().unwrap();
-
-        let data = json!({"@context":"/contexts/Account","@id":format!("/accounts/{}", id),"@type":"Account","id":id,"address":address,"quota":40000000,"used":0,"isDisabled":false,"isDeleted":false,"createdAt":created_at,"updatedAt":updated_at,"password":password});
         let response_data: serde_json::Value = client.post("https://api.mail.tm/token")
             .json(&data)
             .send()?
@@ -149,12 +141,12 @@ impl Account {
     pub fn get_messages(&self) -> Result<Vec<PreviewMessage>, Box<dyn std::error::Error>> {
 
         let json_object: serde_json::Value = self.client.get("https://api.mail.tm/messages")
-            .header("Authorization", &self.token)
+            .bearer_auth(&self.token)
             .send()?
             .error_for_status()?
             .json()?;
 
-        let messages: Vec<PreviewMessage> = serde_json::from_str(&json_object["hydra_member"].to_string())
+        let messages: Vec<PreviewMessage> = serde_json::from_str(&json_object["hydra:member"].to_string())
             .unwrap_or(vec![]);
 
 
@@ -170,20 +162,18 @@ impl Account {
             id: self.id.clone(),
             client: self.client.clone()
         };
-        go!(move || {
+
+        thread::spawn(move || {
             let mut received: Vec<PreviewMessage> = vec![];
             'main: loop {
                 let msgs = match account.get_messages() {
                     Ok(msgs) => msgs,
                     Err(_) => {
-                        if tx.send((None, Box::new(MessageRecvError))).is_err() {
-                            break 'main;
-                        };
+                        let _ = tx.send((None, Box::new(MessageRecvError)));
                         vec![]
                     }
                 };
 
-                #[allow(unused_must_use)]
                 if !msgs.is_empty() {
                     for msg in msgs.iter() {
                         if !received.contains(msg) {
@@ -204,7 +194,7 @@ impl Account {
 
     pub fn get_message(&self, preview_msg: &PreviewMessage) -> Result<Message, Box<dyn std::error::Error>> {
         return Ok(self.client.get(format!("https://api.mail.tm/messages/{}", preview_msg.id))
-            .header("Authorization", &self.token)
+            .bearer_auth(&self.token)
             .send()?
             .error_for_status()?
             .json()?);
@@ -212,7 +202,7 @@ impl Account {
 
     pub fn delete(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         self.client.delete(format!("https://api.mail.tm/accounts/{}", self.id))
-            .header("Authorization", &self.token)
+            .bearer_auth(&self.token)
             .send()?
             .error_for_status()?;
 
